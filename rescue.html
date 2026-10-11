@@ -34,6 +34,11 @@
     #help { width: 36px; height: 36px; padding: 0; border-radius: 50%; font-weight: 800 }
     #hint { display: flex; align-items: center; gap: 8px; color: #c3cddc; font-size: 14px; padding: 8px 14px; border-bottom: 1px solid #222b3a; min-height: 38px; background: #0e1420 }
     #hint.ok { color: #b8f5cf } #hint.bad { color: #ffd0d0 }
+    /* spoken mission updates (narration/, ElevenLabs) */
+    #narr { display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 6px 14px; border-bottom: 1px solid #222b3a; background: #121a29; color: #e6edf7 }
+    #narr[hidden] { display: none }
+    #narr .who { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #93a1b8 }
+    #narr.p0 { background: #3a1616; color: #ffd0d0 } #narr.p1 { background: #1d2a44 }
     main { position: relative; flex: 1; min-height: 0 }
     canvas { position: absolute; top: 0; right: 0; bottom: 0; left: 0; width: 100%; height: 100%; display: block; outline: none }
     main.with-panel canvas { left: 314px; width: calc(100% - 314px) }
@@ -117,9 +122,11 @@
     <span class="pill" id="stateBadge">Loading</span>
     <span class="spacer"></span>
     <button id="startBtn" class="primary" disabled>Start mission</button>
+    <button id="voiceBtn" title="Spoken mission updates (ElevenLabs)" aria-pressed="true">🔊 Voice on</button>
     <button id="help" title="How it works" aria-label="How it works">?</button>
   </header>
   <div id="hint">Loading the building…</div>
+  <div id="narr" hidden><span class="who">Mission voice</span><span id="narrText"></span></div>
   <main class="with-panel">
     <canvas id="unity-canvas" tabindex="-1"></canvas>
     <div id="load"><div style="text-align:center">Loading the building… <span id="pct">0%</span><div class="bar"><i id="loadBar"></i></div></div></div>
@@ -213,6 +220,24 @@
     </div>
   </main>
   <script src="rescue-sim/Build/rescue-sim.loader.js"></script>
+  <script src="narration/aeronav-narration.js"></script>
+  <script>
+    // Spoken mission updates: the server (scan_server.py + narration/) decides what to say; this only shows and plays it.
+    (() => {
+      const el = document.getElementById('narr'), txt = document.getElementById('narrText'), btn = document.getElementById('voiceBtn');
+      let on = true;
+      const narr = AeroNavNarration.attach({
+        onLine: u => { txt.textContent = u.text; el.className = 'p' + u.priority; el.hidden = false; },
+        onStatus: s => { if (s.error && !s.audio) btn.title = 'Voice unavailable: ' + s.error; },
+      });
+      // Browsers only play audio after a click: unlock it with the Start buttons.
+      ['startBtn', 'tutorialStart'].forEach(id => document.getElementById(id).addEventListener('click', () => narr.unlock()));
+      btn.onclick = () => {
+        on = !on; narr.setMuted(!on); if (on) narr.unlock();
+        btn.textContent = on ? '🔊 Voice on' : '🔇 Voice off'; btn.setAttribute('aria-pressed', on);
+      };
+    })();
+  </script>
   <script>
     const $ = id => document.getElementById(id);
     const canvas = $('unity-canvas');

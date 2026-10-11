@@ -26,6 +26,8 @@ Rescue Mission (same calls under /api/rescue, frames in image_store/rescue/, ONN
     POST /api/rescue/<id>/frames         a drone camera frame -> analyzed now -> {"status", "detections"}
     POST /api/rescue/<id>/localize       Unity's 3-D position for each detection (ray through the box center)
     GET  /api/rescue/vision              is the person model server reachable
+Narration (ElevenLabs, key from ELEVENLABS_API_KEY or .env, never sent to the browser): /api/narration/..., see
+narration/README.md.
 Everything else is a static file from the repository (city.html, drone-city/, ...). Standard library only.
 """
 
@@ -43,6 +45,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from image_store.scans import ScanError, ScanStore, decode_image_payload
+from narration.hub import NarrationHub
 
 REPO = Path(__file__).resolve().parent
 MAX_BODY = 20 * 1024 * 1024
@@ -172,6 +175,7 @@ class Handler(SimpleHTTPRequestHandler):
     inference: Inference = None
     rescue_store: ScanStore = None          # Rescue Mission frames (image_store/rescue/)
     rescue_inference: Inference = None      # the ONNX person detector (second VisionServer)
+    narration: NarrationHub = None          # spoken mission updates (narration/)
 
     def _pick(self, m):
         """(store, inference) for /api/scans or /api/rescue."""
@@ -187,7 +191,25 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _narration(self, method):
+        if not self.narration or not self.path.startswith("/api/narration"):
+            return False
+        n = int(self.headers.get("Content-Length") or 0) if method == "POST" else 0
+        if n > MAX_BODY:
+            self._json(413, {"error": "oversized body"})
+            return True
+        code, ctype, body = self.narration.handle(method, self.path.split("?", 1)[0], self.rfile.read(n) if n > 0 else None)
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store" if ctype == "application/json" else "max-age=3600")
+        self.end_headers()
+        self.wfile.write(body)
+        return True
+
     def do_GET(self):
+        if self._narration("GET"):
+            return
         path = self.path.split("?", 1)[0]
         if "ground_truth" in path:
             return self._json(404, {"error": "not found"})
@@ -225,6 +247,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(404, {"error": str(e)})
 
     def do_POST(self):
+        if self._narration("POST"):
+            return
         m = ROUTE.match(self.path.split("?", 1)[0])
         if not m or m["image"]:
             return self._json(404, {"error": "not found"})
@@ -276,7 +300,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(500, {"error": f"write failed: {e}"})
 
     def log_message(self, fmt, *args):
-        if not self.path.startswith("/api/") or "/detections" in self.path or self.path == "/api/vision":
+        if not self.path.startswith("/api/") or "/detections" in self.path or self.path.startswith("/api/narration/") or self.path == "/api/vision":
             return
         if (self.path.endswith("/images") or self.path.endswith("/frames") or self.path.endswith("/localize")) \
                 and len(args) > 1 and str(args[1]).startswith("2"):
@@ -299,6 +323,10 @@ def main(argv=None):
     args = ap.parse_args(argv)
     Handler.store = ScanStore(args.root)
     Handler.rescue_store = ScanStore(args.rescue_root)
+    Handler.narration = NarrationHub(detections=Handler.rescue_store.detections)
+    st = Handler.narration.tts.status()
+    log("Narration: " + (f"ElevenLabs configured, voice {st['voice_id'] or repr(st['voice_name'])}, model {st['model_id']}"
+                         if st["configured"] else "ELEVENLABS_API_KEY not set, captions only (no audio)"))
     if not args.no_ai:
         Handler.rescue_inference = Inference(Handler.rescue_store, args.rescue_vision, args.rescue_conf)
         h = Handler.rescue_inference.health()

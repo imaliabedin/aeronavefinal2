@@ -75,3 +75,6 @@ image_store/rescue/
 # Keep the website's WebGL builds in the repository (needed to run the demo without Unity)
 !drone-city/Build/
 !rescue-sim/Build/
+
+# Narration audio cache (narration/tts.py)
+narration/cache/
