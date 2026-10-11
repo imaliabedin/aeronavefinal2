@@ -35,6 +35,15 @@ public class SearchDrone : MonoBehaviour
     [Tooltip("Thermal sensing: fires within this range are noticed, and nothing within keepOffFire of one is flown.")]
     public float heatRange = 4f;
     public float keepOffFire = 1.1f;
+    [Tooltip("Rescue Mission: spots count as seen only when a camera frame covered them (set by RescueMission), " +
+             "not because the drone flew within sightRadius. Arriving at a spot does not mark it seen either.")]
+    public bool cameraSearch;
+    [Tooltip("cameraSearch: stop this far (m) from an unsearched spot in clear view, and hover until a camera frame has " +
+             "been aimed at it (at most lookHoldMax s), instead of flying on top of it where the camera can't see it.")]
+    public float lookStandoff = 2f, lookHoldMax = 3f;
+    /// cameraSearch: the floor point it is hovering to look at (RescueMission aims the next frame there and sets LookDone).
+    public Vector3? LookTarget { get; private set; }
+    public bool LookDone { get; set; }
 
     public SonarMap Belief { get; } = new SonarMap();
     public State Status { get; private set; }
@@ -64,6 +73,7 @@ public class SearchDrone : MonoBehaviour
     Quaternion lastCamRotation;
     readonly HashSet<Vector3Int> heat = new();   // (x, floor, z) cells too close to a fire
     readonly HashSet<Vector3Int> givenUp = new();   // (x, floor, z) spots it timed out on
+    readonly HashSet<Vector3Int> visited = new();   // cameraSearch: spots it flew to (under the camera's view, not seen)
     readonly HashSet<int> rechecked = new();        // floors already revisited for written-off spots
     bool rescannedThisFloor;
     readonly HashSet<Vector3Int> flown = new();   // (x, floor, z) cells its body has flown through: known free
@@ -151,17 +161,22 @@ public class SearchDrone : MonoBehaviour
                     {
                         givenUp.Add(new Vector3Int(target.x, Floor, target.y));
                         grid.state[Floor, target.x, target.y] = SearchGrid.Spot.Unreachable;
+                        // Its neighbours are most likely just as hard to reach: not targets again this pass.
+                        if (cameraSearch) VisitAround(target, 3);
                         ChooseNext();
                         break;
                     }
                 }
+                if (Status == State.Searching && cameraSearch && LookTarget == null && InLookRange()) { StartLook(); break; }
                 if (Move(dt, speed))
                 {
                     if (Status == State.ToStairs) TryClimb();
                     else
                     {
-                        // Arrived: whatever is right here has been seen, even inside clutter.
-                        if (grid.state[Floor, target.x, target.y] != SearchGrid.Spot.Seen) Mark(Floor, target.x, target.y);
+                        // Arrived: whatever is right here has been seen, even inside clutter. With cameraSearch the
+                        // spot is under the camera's view: it stays unseen until a frame from elsewhere covers it.
+                        if (cameraSearch) VisitAround(target);
+                        else if (grid.state[Floor, target.x, target.y] != SearchGrid.Spot.Seen) Mark(Floor, target.x, target.y);
                         ChooseNext();
                     }
                 }
@@ -170,7 +185,7 @@ public class SearchDrone : MonoBehaviour
                 TryClimb();
                 break;
             case State.Holding:
-                if ((holdTimer -= dt) <= 0f) afterHold();
+                if ((holdTimer -= dt) <= 0f || LookTarget != null && LookDone) afterHold();
                 break;
             case State.Climbing:
                 if (Move(dt, climbSpeed)) ArriveOnFloor(Floor + (GoalFloor > Floor ? 1 : -1));
@@ -201,14 +216,21 @@ public class SearchDrone : MonoBehaviour
         var start = grid.CellOf(transform.position);
         var previous = hasTargetBefore ? target : new Vector2Int(-1, -1);
         Dijkstra(Floor, start);
+        if (cameraSearch) CountWorkAround();
         float best = float.PositiveInfinity;
         for (int x = 1; x < grid.nx - 1; x++)
             for (int z = 1; z < grid.nz - 1; z++)
-                if (IsWork(Floor, x, z) && dist[x, z] < best)
+            {
+                if (!IsWork(Floor, x, z) || float.IsPositiveInfinity(dist[x, z])) continue;
+                // cameraSearch: prefer spots inside larger unsearched areas (up to isolationCost cells further away), so
+                // the drone sweeps an area at a time instead of zigzagging back for single leftover spots.
+                float cost = dist[x, z] + (cameraSearch ? isolationCost * (1f - Mathf.Min(1f, workAround[x, z] / (float)areaFull)) : 0f);
+                if (cost < best)
                 {
-                    best = dist[x, z];
+                    best = cost;
                     target = new Vector2Int(x, z);
                 }
+            }
 
         if (!float.IsPositiveInfinity(best))
         {
@@ -231,7 +253,7 @@ public class SearchDrone : MonoBehaviour
         // The rest is walls, furniture or closed off (for now).
         for (int x = 1; x < grid.nx - 1; x++)
             for (int z = 1; z < grid.nz - 1; z++)
-                if (grid.state[Floor, x, z] == SearchGrid.Spot.Unseen && grid.owner[Floor, x, z] == id)
+                if (grid.state[Floor, x, z] == SearchGrid.Spot.Unseen && grid.owner[Floor, x, z] == id && !visited.Contains(new Vector3Int(x, Floor, z)))
                     grid.state[Floor, x, z] = BlockedHere(Floor, x, z) ? SearchGrid.Spot.Solid : SearchGrid.Spot.Unreachable;
 
         int next = coord.NextFloorFor(this);
@@ -250,9 +272,32 @@ public class SearchDrone : MonoBehaviour
         Status = State.Done;
     }
 
+    [Tooltip("cameraSearch: extra route cost (in 0.5 m cells) of an isolated unsearched spot compared with one in a large unsearched area.")]
+    public float isolationCost = 8f;
+    const int AreaRadius = 3, areaFull = 20;   // unsearched spots within 1.5 m that count as "a large area"
+    int[,] workAround;
+
+    /// Unsearched spots of its share within AreaRadius cells of each cell (box sum over the floor).
+    void CountWorkAround()
+    {
+        int nx = grid.nx, nz = grid.nz;
+        workAround ??= new int[nx, nz];
+        var sum = new int[nx + 1, nz + 1];
+        for (int x = 0; x < nx; x++)
+            for (int z = 0; z < nz; z++)
+                sum[x + 1, z + 1] = (IsWork(Floor, x, z) ? 1 : 0) + sum[x, z + 1] + sum[x + 1, z] - sum[x, z];
+        for (int x = 0; x < nx; x++)
+            for (int z = 0; z < nz; z++)
+            {
+                int x0 = Mathf.Max(0, x - AreaRadius), x1 = Mathf.Min(nx, x + AreaRadius + 1);
+                int z0 = Mathf.Max(0, z - AreaRadius), z1 = Mathf.Min(nz, z + AreaRadius + 1);
+                workAround[x, z] = sum[x1, z1] - sum[x0, z1] - sum[x1, z0] + sum[x0, z0];
+            }
+    }
+
     /// Its own share that still needs searching: unseen, or written off earlier but not timed out on.
     bool IsWork(int f, int x, int z) =>
-        grid.owner[f, x, z] == id &&
+        grid.owner[f, x, z] == id && !visited.Contains(new Vector3Int(x, f, z)) &&
         (grid.state[f, x, z] == SearchGrid.Spot.Unseen ||
          grid.state[f, x, z] == SearchGrid.Spot.Unreachable && !givenUp.Contains(new Vector3Int(x, f, z)));
 
@@ -275,6 +320,30 @@ public class SearchDrone : MonoBehaviour
         return best;
     }
 
+    bool InLookRange()
+    {
+        var w = grid.World(Floor, target.x, target.y);
+        var d = w - transform.position;
+        d.y = 0f;
+        float m = d.magnitude;
+        return m <= lookStandoff && m >= 0.9f &&
+               RescueMission.SeesSpot(transform.position, w.x, w.z, grid.origin.y + Floor * grid.floorHeight);
+    }
+
+    void StartLook()
+    {
+        var w = grid.World(Floor, target.x, target.y);
+        LookTarget = new Vector3(w.x, grid.origin.y + Floor * grid.floorHeight, w.z);
+        LookDone = false;
+        var t = target;
+        Hold(lookHoldMax, () =>
+        {
+            LookTarget = null;
+            if (IsWork(Floor, t.x, t.y)) VisitAround(t, 1);   // not visible from here after all: try the others first
+            ChooseNext();
+        });
+    }
+
     void Hold(float seconds, System.Action then)
     {
         path.Clear();
@@ -291,6 +360,17 @@ public class SearchDrone : MonoBehaviour
         var start = grid.CellOf(transform.position);
         var entry = grid.CellOf(grid.StairEntry(Floor));
         Dijkstra(Floor, start);
+        // Still cut off after a rescan: the fire's safety margin closes the way. First squeeze past the fire, closer than
+        // usual; if even that is closed, fly through the fire's edge rather than stay trapped while people are missing
+        // (back to the normal margin on the next floor).
+        for (int level = 1; level <= 2 && float.IsPositiveInfinity(dist[entry.x, entry.y]) && escape < level && stairFailures >= 1; level++)
+        {
+            escape = level;
+            Dijkstra(Floor, start);
+            if (float.IsPositiveInfinity(dist[entry.x, entry.y])) continue;
+            Debug.Log($"Drone {id + 1}: {(level == 1 ? "squeezing past" : "flying through the edge of")} the fire to the stairs on floor {Floor + 1}");
+        }
+        if (float.IsPositiveInfinity(dist[entry.x, entry.y])) escape = 0;
         if (float.IsPositiveInfinity(dist[entry.x, entry.y]))
         {
             // Hover and rescan: the way out may only look blocked.
@@ -321,6 +401,7 @@ public class SearchDrone : MonoBehaviour
     void ArriveOnFloor(int f)
     {
         Floor = f;
+        escape = 0;
         rescannedThisFloor = false;
         if (Floor != GoalFloor) { TryClimb(); return; }
         Status = State.Searching;
@@ -335,8 +416,30 @@ public class SearchDrone : MonoBehaviour
     bool Free(int f, int x, int z)
     {
         var key = new Vector3Int(x, f, z);
-        if (!grid.InInterior(x, z) || heat.Contains(key)) return false;
-        return flown.Contains(key) || !BlockedHere(f, x, z);
+        if (!grid.InInterior(x, z)) return false;
+        if (!ignoreHeat && escape < 2 && (escape == 1 ? heatCore : heat).Contains(key)) return false;
+        return flown.Contains(key) || ignoreBelief || !BlockedHere(f, x, z);
+    }
+    bool ignoreHeat, ignoreBelief;
+    [Tooltip("Cut off from the stairs by the keepOffFire margin: it may pass this close (m) to a fire to get out.")]
+    public float escapeKeepOff = 0.55f;
+    int escape;   // on the way to the stairs (until the next floor): 1 squeezing past a fire, 2 flying through its edge
+    readonly HashSet<Vector3Int> heatCore = new();      // (x, floor, z) cells within escapeKeepOff of a fire
+
+    /// Debugging: which planning constraint keeps it from the stairs (normal / without fire zones / without sonar belief).
+    public string StairsReachable()
+    {
+        var start = grid.CellOf(transform.position);
+        var entry = grid.CellOf(grid.StairEntry(Floor));
+        string r = "";
+        foreach (var (h, b, name) in new[] { (false, false, "normal"), (true, false, "no-heat"), (false, true, "no-belief"), (true, true, "neither") })
+        {
+            ignoreHeat = h; ignoreBelief = b;
+            Dijkstra(Floor, start);
+            r += $"{name}:{(!float.IsPositiveInfinity(dist[entry.x, entry.y]) ? "yes" : "no")} ";
+        }
+        ignoreHeat = ignoreBelief = false;
+        return r + $"heat cells {heat.Count}";
     }
 
     bool BlockedHere(int f, int x, int z) => Belief.IsBlocked(new Vector3Int(x, grid.BeliefLayer(f), z));
@@ -506,6 +609,7 @@ public class SearchDrone : MonoBehaviour
 
     void See()
     {
+        if (cameraSearch) return;   // the Rescue Mission marks spots from its camera frames
         var pos = transform.position;
         var c = grid.CellOf(pos);
         int r = Mathf.CeilToInt(sightRadius / SearchGrid.Cell);
@@ -522,6 +626,24 @@ public class SearchDrone : MonoBehaviour
                     Mark(Floor, x, z);
             }
     }
+
+    /// cameraSearch: the spots within 1 m of where it arrived are under the camera's view from here (it looks 30 deg
+    /// down): no longer targets for this pass, but still unseen until a frame from elsewhere covers them.
+    void VisitAround(Vector2Int at, int r = 2)
+    {
+        for (int x = at.x - r; x <= at.x + r; x++)
+            for (int z = at.y - r; z <= at.y + r; z++)
+                if ((x - at.x) * (x - at.x) + (z - at.y) * (z - at.y) <= r * r) visited.Add(new Vector3Int(x, Floor, z));
+    }
+
+    /// cameraSearch: forget the spots it flew to, so a second pass can try them again from other positions.
+    public void ForgetVisited() { visited.Clear(); givenUp.Clear(); rechecked.Clear(); stairFailures = 0; rescannedThisFloor = false; }
+
+    /// cameraSearch: make a spot a target again (a second look at a sighting from there).
+    public void Unvisit(int f, int x, int z) => visited.Remove(new Vector3Int(x, f, z));
+
+    /// Spots it flew to that no camera frame has covered yet.
+    public bool Visited(int f, int x, int z) => visited.Contains(new Vector3Int(x, f, z));
 
     void Mark(int f, int x, int z)
     {
@@ -548,6 +670,7 @@ public class SearchDrone : MonoBehaviour
                     var w = grid.World(Floor, x, z) - fire.position;
                     w.y = 0f;
                     if (w.magnitude <= keepOffFire && heat.Add(new Vector3Int(x, Floor, z))) added = true;
+                    if (w.magnitude <= escapeKeepOff) heatCore.Add(new Vector3Int(x, Floor, z));
                 }
         }
         if (added && (Status == State.Searching || Status == State.ToStairs) && !RouteFree()) replan = true;

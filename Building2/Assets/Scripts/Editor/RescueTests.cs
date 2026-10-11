@@ -131,12 +131,79 @@ public static class RescueTests
                 // Terminal state holds: more time changes nothing.
                 for (int i = 0; i < 600; i++) { coord.Step(dt); m.Step(dt); }
                 var g = coord.Grid;
-                Log($"fire interval {iv} s: {m.State} at {endTime / 60f:0.0} min; coverage {coord.Coverage() * 100f:0.0}%, " +
+                Log($"fire interval {iv} s: {m.State} ({m.EndReason}) at {endTime / 60f:0.0} min; coverage {coord.Coverage() * 100f:0.0}%, " +
                     $"left {g.Count(SearchGrid.Spot.Unseen)}, closed off {g.Count(SearchGrid.Spot.Unreachable)}, cut off by fire {m.CutOff}; " +
                     $"collapse {(collapsing ? "yes" : "no")}; after +30 s still {m.State}, search running {coord.Running}");
                 if (m.State == RescueMission.Phase.Successful && (collapsing || endTime >= m.missionSeconds)) { Log("FAIL success with collapse or after the deadline"); fails++; }
-                if (m.State == RescueMission.Phase.Failed && (!collapsing || endTime < m.missionSeconds)) { Log("FAIL failure without collapse or before the deadline"); fails++; }
+                // Failure: the deadline (the building collapses), or the search ran out of places to look (no collapse).
+                bool timeUp = m.EndReason == "time" && collapsing && endTime >= m.missionSeconds;
+                bool searched = m.EndReason == "search_finished" && !collapsing && endTime < m.missionSeconds;
+                if (m.State == RescueMission.Phase.Failed && !timeUp && !searched) { Log($"FAIL inconsistent failure ({m.EndReason}, collapse {collapsing}, {endTime:0} s)"); fails++; }
+                if (m.State == RescueMission.Phase.Successful && m.EndReason != "all_found") { Log("FAIL success without every person found"); fails++; }
                 if (coord.Running) { Log("FAIL search still running after the end"); fails++; }
+                Object.DestroyImmediate(m.gameObject);
+            }
+        }
+        catch (System.Exception e) { Debug.LogException(e); fails++; }
+        Log(fails == 0 ? "RESULT PASS" : $"RESULT FAIL ({fails})");
+        EditorApplication.Exit(fails == 0 ? 0 : 1);
+    }
+
+    /// The camera search (spots searched only by frames) with simulated frames, headless: per seed, the end state and
+    /// whether any drone stays in one place while it is searching. SEEDS="101,12345" FIRE="off|on".
+    public static void CameraSearch()
+    {
+        int fails = 0;
+        try
+        {
+            var seeds = (System.Environment.GetEnvironmentVariable("SEEDS") ?? "101,12345").Split(',');
+            bool fireOn = System.Environment.GetEnvironmentVariable("FIRE") == "on";
+            foreach (var sd in seeds)
+            {
+                DroneSearchDemo.CreateScene();
+                EditorSceneManager.OpenScene("Assets/Scenes/DroneSearchDemo.unity");
+                var gen = Object.FindFirstObjectByType<BuildingGenerator>();
+                var coord = Object.FindFirstObjectByType<SearchCoordinator>();
+                gen.seed = int.Parse(sd);
+                gen.Generate();
+                coord.Setup(gen);
+                var m = new GameObject("RescueControls").AddComponent<RescueMission>();
+                m.InitForTest(coord);
+                if (!fireOn) m.fireInterval = 1e9f;
+                m.BeginSimulatedFrames();
+                const float dt = 0.05f;
+                var last = new Dictionary<int, (Vector3 p, float t)>();
+                float worstStill = 0f; string worst = "";
+                var doneFor = new Dictionary<int, float>(); float worstDone = 0f; string worstDoneAt = "";
+                float nextLog = 60f;
+                while (m.State == RescueMission.Phase.Running)
+                {
+                    coord.Step(dt); m.Step(dt);
+                    foreach (var d in coord.drones)
+                    {
+                        if (d.Status == SearchDrone.State.Done) doneFor[d.id] = (doneFor.TryGetValue(d.id, out float df) ? df : 0f) + dt;
+                        else doneFor[d.id] = 0f;
+                        if (doneFor[d.id] > worstDone) { worstDone = doneFor[d.id]; worstDoneAt = $"drone {d.id + 1} floor {d.Floor + 1} at {m.MissionTime:0} s"; }
+                        if (!last.TryGetValue(d.id, out var l) || (d.transform.position - l.p).sqrMagnitude > 0.04f)
+                            last[d.id] = (d.transform.position, m.MissionTime);
+                        else if (m.MissionTime - l.t > worstStill)
+                        {
+                            worstStill = m.MissionTime - l.t;
+                            worst = $"drone {d.id + 1} {d.Status} floor {d.Floor + 1} at {m.MissionTime:0} s: {d.Debugging}; stairs {d.StairsReachable()}";
+                        }
+                    }
+                    if (m.MissionTime >= nextLog)
+                    {
+                        nextLog += 120f;
+                        Log($"  seed {sd} t {m.MissionTime:0} s: coverage {m.SearchedShare * 100f:0.0}%, unseen {coord.Grid.Count(SearchGrid.Spot.Unseen)}, " +
+                            string.Join(", ", coord.drones.ConvertAll(d => $"d{d.id + 1} f{d.Floor + 1} {d.Status}")));
+                    }
+                }
+                Log($"seed {sd} fire {(fireOn ? "on" : "off")}: {m.State} ({m.EndReason}) at {m.MissionTime / 60f:0.0} min; coverage {m.SearchedShare * 100f:0.0}%, " +
+                    $"unseen {coord.Grid.Count(SearchGrid.Spot.Unseen)}, frames {m.FramesSent}; longest still while not done {worstStill:0} s ({worst})");
+                Log($"  longest a drone sat finished (Done) before the end: {worstDone:0.0} s ({worstDoneAt})");
+                if (worstStill > 60f) { Log("FAIL a drone stayed in one place over 60 s while searching"); fails++; }
+                if (worstDone > 5f) { Log("FAIL a drone stopped searching while people were still missing"); fails++; }
                 Object.DestroyImmediate(m.gameObject);
             }
         }

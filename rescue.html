@@ -6,122 +6,201 @@
   <title>AeroNav — Rescue Mission</title>
   <style>
     * { box-sizing: border-box }
-    body { margin: 0; height: 100vh; display: flex; flex-direction: column; background: #0b0f18; color: #e6edf7; font: 14px/1.4 system-ui, -apple-system, sans-serif }
-    header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #222b3a }
-    header a { color: #e6edf7; text-decoration: none; font-weight: 800; margin-right: 6px }
-    button { font: inherit; padding: 8px 12px; border-radius: 7px; border: 1px solid #2b3850; background: #141c2b; color: #e6edf7; cursor: pointer }
+    body { margin: 0; height: 100vh; display: flex; flex-direction: column; background: #0b0f18; color: #e6edf7; font: 14px/1.45 system-ui, -apple-system, sans-serif }
+    header { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 10px 14px; border-bottom: 1px solid #222b3a }
+    header a.home { color: #e6edf7; text-decoration: none; font-weight: 800 }
+    header .title { color: #93a1b8; font-weight: 600 }
+    .group { display: inline-flex; align-items: center; gap: 8px }
+    .label { color: #93a1b8; font-size: 12px; text-transform: uppercase; letter-spacing: .06em }
+    .spacer { flex: 1 }
+    button { font: inherit; padding: 8px 12px; border-radius: 8px; border: 1px solid #2b3850; background: #141c2b; color: #e6edf7; cursor: pointer }
     button:hover:not(:disabled) { border-color: #477dff }
     button:disabled { opacity: .45; cursor: default }
+    button:focus-visible { outline: 2px solid #6d96ff; outline-offset: 2px }
     .muted { color: #93a1b8; font-size: 13px }
     .err { color: #ff8a8a }
-    #timer { font: 800 28px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; padding: 4px 12px; border-radius: 8px; background: #141c2b; border: 1px solid #2b3850 }
-    #timer.low { color: #ffb347 } #timer.out { color: #ff6b6b }
+    #timer { font: 800 26px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; padding: 5px 12px; border-radius: 8px; background: #141c2b; border: 1px solid #2b3850 }
+    #timer.low { color: #ffb347; border-color: #8a5a12 } #timer.out { color: #ff6b6b; border-color: #8a2323 }
     .speeds { display: inline-flex; border: 1px solid #2b3850; border-radius: 8px; overflow: hidden }
     .speeds button { border: 0; border-radius: 0; padding: 8px 14px; font-weight: 700 }
     .speeds button + button { border-left: 1px solid #2b3850 }
     .speeds button.on { background: #c9952b; color: #111 }
-    .badge { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 12px; font-weight: 700; background: #222b3a }
-    .badge.ok { background: #1e5b3a } .badge.bad { background: #6b2323 } .badge.run { background: #1d3366 }
-    #hint { color: #93a1b8; font-size: 13px; padding: 6px 14px; border-bottom: 1px solid #222b3a; min-height: 32px }
+    #effSpeed { color: #ffb347; font-size: 12px }
+    .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: 99px; font-size: 13px; font-weight: 700; background: #222b3a }
+    .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .9 }
+    .pill.ok { background: #1e5b3a; color: #b8f5cf } .pill.bad { background: #6b2323; color: #ffd0d0 } .pill.run { background: #1d3366; color: #cddbff }
+    .primary { background: #2f9e5f; border-color: #2f9e5f; font-weight: 700; padding: 10px 18px }
+    .primary:hover:not(:disabled) { background: #36b36c; border-color: #36b36c }
+    #help { width: 36px; height: 36px; padding: 0; border-radius: 50%; font-weight: 800 }
+    #hint { display: flex; align-items: center; gap: 8px; color: #c3cddc; font-size: 14px; padding: 8px 14px; border-bottom: 1px solid #222b3a; min-height: 38px; background: #0e1420 }
+    #hint.ok { color: #b8f5cf } #hint.bad { color: #ffd0d0 }
     main { position: relative; flex: 1; min-height: 0 }
-    canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; outline: none }
+    canvas { position: absolute; top: 0; right: 0; bottom: 0; left: 0; width: 100%; height: 100%; display: block; outline: none }
+    main.with-panel canvas { left: 314px; width: calc(100% - 314px) }
     #load { position: absolute; inset: 0; display: grid; place-items: center; background: #0b0f18; color: #93a1b8; z-index: 5 }
     #load.done { display: none }
-    #panel { position: absolute; left: 12px; bottom: 12px; width: 300px; max-height: calc(100% - 24px); overflow: auto; z-index: 3;
-             background: rgba(11, 15, 24, .92); border: 1px solid #222b3a; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 12px }
-    #panel h2 { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #93a1b8; margin: 0 0 6px }
-    .stats { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; font-size: 13px }
-    .stats span:nth-child(even) { text-align: right; font-variant-numeric: tabular-nums }
-    .bar { height: 8px; border-radius: 4px; background: #222b3a; overflow: hidden } .bar i { display: block; height: 100%; background: #2f9e5f }
+    #load .bar { width: 260px; margin-top: 10px }
+
+    /* side panel */
+    #panel { position: absolute; left: 12px; top: 12px; bottom: 12px; width: 290px; overflow: auto; z-index: 3;
+             background: #0b0f18; border: 1px solid #222b3a; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 16px }
+    #panel[hidden] { display: none }
+    #panel h2 { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #93a1b8; margin: 0 0 8px; display: flex; align-items: center; justify-content: space-between }
+    #panelToggle { position: absolute; left: 12px; top: 12px; z-index: 3; padding: 6px 10px; font-size: 13px }
+    #panel .hide { padding: 2px 8px; font-size: 12px; text-transform: none; letter-spacing: 0 }
+    .big { font-size: 28px; font-weight: 800; line-height: 1 } .big small { font-size: 15px; color: #93a1b8; font-weight: 600 }
+    .people { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px }
+    .people svg { width: 26px; height: 26px }
+    .people .p { fill: none; stroke: #4b5a73; stroke-width: 2 } .people .p.found { fill: #5be38d; stroke: #5be38d }
+    .row { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; margin-bottom: 4px }
+    .bar { height: 8px; border-radius: 4px; background: #222b3a; overflow: hidden } .bar i { display: block; height: 100%; width: 0; background: #2f9e5f; transition: width .4s }
     .bar.fire i { background: #e0572b }
-    .det { display: grid; grid-template-columns: 72px 1fr; gap: 8px; margin-top: 8px; font-size: 12px; cursor: pointer }
-    .det .thumb { position: relative; width: 72px; height: 72px; border-radius: 6px; overflow: hidden; background: #000 }
+    .meter + .meter { margin-top: 10px }
+    .drone { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 4px 0 }
+    .dot { width: 10px; height: 10px; border-radius: 50%; flex: none }
+    details { font-size: 13px; color: #93a1b8 } summary { cursor: pointer; color: #c3cddc }
+    .stats { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; margin-top: 8px }
+    .stats span:nth-child(even) { text-align: right; font-variant-numeric: tabular-nums; color: #c3cddc }
+    .det { display: grid; grid-template-columns: 64px 1fr; gap: 10px; margin-top: 8px; padding: 6px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid transparent }
+    .det:hover { border-color: #2b3850; background: #121a28 }
+    .det .thumb { position: relative; width: 64px; height: 64px; border-radius: 6px; overflow: hidden; background: #000 }
     .det .thumb img { width: 100%; height: 100%; display: block }
     .det .thumb i, #viewer .photo i { position: absolute; border: 2px solid #ff3b30; box-shadow: 0 0 0 1px #000 }
-    .det:hover { color: #fff }
-    .det.weak { opacity: .6 }
-    .tag { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 99px; background: #6b5317 }
+    .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: #6b5317; color: #ffe3a3 }
+    .tag.ok { background: #1e5b3a; color: #b8f5cf } .tag.bad { background: #6b2323; color: #ffd0d0 }
+    .empty { color: #93a1b8; font-size: 13px; margin-top: 4px }
+
     /* overlays */
-    .overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(5, 8, 14, .6); z-index: 4 }
+    .overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(5, 8, 14, .7); z-index: 4; padding: 16px; overflow: auto }
     .overlay[hidden] { display: none }
-    .card { width: min(460px, calc(100% - 32px)); background: #0f1522; border: 1px solid #2b3850; border-radius: 14px; padding: 20px }
-    .card h3 { margin: 0 0 10px; font-size: 18px }
-    .card ol { margin: 0 0 14px; padding-left: 20px; color: #c3cddc } .card li { margin: 4px 0 }
-    .primary { background: #2f9e5f; border-color: #2f9e5f; font-weight: 700; padding: 10px 18px }
+    .card { width: min(520px, 100%); background: #0f1522; border: 1px solid #2b3850; border-radius: 14px; padding: 22px }
+    .card h3 { margin: 0 0 12px; font-size: 22px }
+    .buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px }
+    #tutorial .card { width: min(900px, 100%); display: grid; grid-template-columns: 1fr 1fr; gap: 24px }
+    .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px }
+    .steps li { display: grid; grid-template-columns: 30px 1fr; gap: 10px; color: #c3cddc }
+    .steps .n { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: #1d3366; color: #cddbff; font-weight: 800; font-size: 13px }
+    .steps b { color: #e6edf7 }
+    .warn { display: flex; flex-direction: column; gap: 8px }
+    .warn video { width: 100%; border-radius: 10px; background: #000; border: 1px solid #3a2020; aspect-ratio: 16 / 9 }
+    .warn .caption { color: #ffd0d0; font-weight: 700 } .warn .caption + .muted { margin-top: -4px }
     #result .card { text-align: center }
-    #result h3 { font-size: 34px; letter-spacing: .04em; margin-bottom: 8px }
+    #result h3 { font-size: 32px; letter-spacing: .04em; margin-bottom: 8px }
     #result.ok h3 { color: #5be38d } #result.bad h3 { color: #ff6b6b }
-    #viewer .box { position: relative; display: flex; gap: 18px; max-width: calc(100% - 32px); background: #0f1522; border: 1px solid #2b3850; border-radius: 14px; padding: 16px }
+    #result .people { justify-content: center; margin: 4px 0 12px } #result .people svg { width: 34px; height: 34px }
+    #result .buttons { justify-content: center }
+    #resultNote { font-size: 12px }
+    #viewer .box { position: relative; display: flex; gap: 18px; max-width: 100%; background: #0f1522; border: 1px solid #2b3850; border-radius: 14px; padding: 16px }
     #viewer .photo { position: relative; height: min(76vh, calc(100vw - 420px)); aspect-ratio: 1; flex: none; background: #000; border-radius: 8px; overflow: hidden }
     #viewer .photo img { width: 100%; height: 100%; display: block }
     #viewer .info { width: 280px; line-height: 1.6 }
     #viewer .x { position: absolute; top: 10px; right: 10px; font-size: 20px; line-height: 1; padding: 6px 12px }
-    @media (max-width: 900px) { #viewer .box { flex-direction: column } #viewer .photo { height: min(60vh, calc(100vw - 64px)) } #viewer .info { width: auto } #panel { width: auto; right: 12px; max-height: 45% } }
+    @media (max-width: 900px) {
+      #tutorial .card { grid-template-columns: 1fr }
+      #viewer .box { flex-direction: column } #viewer .photo { height: min(60vh, calc(100vw - 64px)) } #viewer .info { width: auto }
+      #panel { width: auto; right: 12px; top: auto; max-height: 45%; background: rgba(11, 15, 24, .95) }
+      main.with-panel canvas { left: 0; width: 100% }
+    }
   </style>
 </head>
 <body>
   <header>
-    <a href="index.html">✦ AeroNav</a>
-    <span class="muted">Rescue Mission</span>
-    <span id="timer" title="Mission time left (simulated)">20:00</span>
-    <span class="speeds" role="group" aria-label="Simulation speed">
-      <button data-speed="1" class="on">1×</button><button data-speed="5">5×</button><button data-speed="10">10×</button>
+    <a class="home" href="index.html">✦ AeroNav</a>
+    <span class="title">Rescue Mission</span>
+    <span class="group"><span class="label">Time left</span><span id="timer" title="Simulated mission time left">20:00</span></span>
+    <span class="group"><span class="label">Speed</span>
+      <span class="speeds" role="group" aria-label="Simulation speed">
+        <button data-speed="1" class="on">1×</button><button data-speed="5">5×</button><button data-speed="10">10×</button>
+      </span>
+      <span id="effSpeed" title="The simulation (clock, drones and fire together) slows down while the AI can't keep up with the drones' camera frames"></span>
     </span>
-    <span class="badge" id="stateBadge">ready</span>
+    <span class="pill" id="stateBadge">Loading</span>
+    <span class="spacer"></span>
     <button id="startBtn" class="primary" disabled>Start mission</button>
+    <button id="help" title="How it works" aria-label="How it works">?</button>
   </header>
   <div id="hint">Loading the building…</div>
-  <main>
+  <main class="with-panel">
     <canvas id="unity-canvas" tabindex="-1"></canvas>
-    <div id="load">Loading the building… <span id="pct">0%</span></div>
+    <div id="load"><div style="text-align:center">Loading the building… <span id="pct">0%</span><div class="bar"><i id="loadBar"></i></div></div></div>
 
+    <button id="panelToggle" hidden>Show mission panel ▸</button>
     <aside id="panel">
       <section>
-        <h2>Search</h2>
-        <div class="bar"><i id="covBar" style="width:0%"></i></div>
-        <div class="stats" style="margin-top:6px">
-          <span>Building searched</span><span id="cov">0%</span>
-          <span title="Open spots no drone has seen yet">Spots left</span><span id="unseen">–</span>
-          <span title="Spots no drone can reach (closed rooms, or near fires burning at the start)">Closed off</span><span id="closed">–</span>
-          <span title="Spots a fire that started during the mission cut off before a drone saw them: not searched">Cut off by fire</span><span id="cutoff">–</span>
-          <span>Drone 1</span><span id="d1">–</span>
-          <span>Drone 2</span><span id="d2">–</span>
+        <h2>Trapped people <button class="hide" id="panelHide" title="Hide the panel for a bigger view">Hide ◂</button></h2>
+        <div class="big"><span id="found">–</span> <small>found</small></div>
+        <div class="people" id="peopleIcons"></div>
+      </section>
+      <section>
+        <div class="meter">
+          <div class="row"><span>Building searched</span><b id="cov">0%</b></div>
+          <div class="bar"><i id="covBar"></i></div>
+        </div>
+        <div class="meter">
+          <div class="row"><span>Building on fire</span><b id="fire">0%</b></div>
+          <div class="bar fire"><i id="fireBar"></i></div>
         </div>
       </section>
       <section>
-        <h2>Fire</h2>
-        <div class="bar fire"><i id="fireBar" style="width:0%"></i></div>
-        <div class="stats" style="margin-top:6px"><span>Building on fire</span><span id="fire">0%</span></div>
+        <h2>Drones</h2>
+        <div class="drone"><span class="dot" style="background:#33bfff"></span><b>Drone 1</b><span class="muted" id="d1">waiting to start</span></div>
+        <div class="drone"><span class="dot" style="background:#ff9926"></span><b>Drone 2</b><span class="muted" id="d2">waiting to start</span></div>
       </section>
       <section>
-        <h2>AI person detection <span class="badge" id="aiBadge">checking…</span></h2>
-        <div class="muted" id="aiStatus">Looking for the model server…</div>
+        <h2>What the AI found <span class="pill" id="aiBadge" style="font-size:11px;padding:2px 9px">checking</span></h2>
+        <div class="empty" id="aiStatus">Looking for the AI model…</div>
         <div id="dets"></div>
       </section>
+      <details>
+        <summary>Details</summary>
+        <div class="stats">
+          <span title="Open floor spots no camera frame has covered yet">Spots not searched yet</span><span id="unseen">–</span>
+          <span title="Spots no drone can reach (closed rooms, or near fires burning at the start)">Closed off</span><span id="closed">–</span>
+          <span title="Spots a fire cut off before a drone could search them">Cut off by fire</span><span id="cutoff">–</span>
+          <span>Camera frames checked</span><span id="frames">–</span>
+          <span title="Weak or one-view sightings the AI is not sure about">Unsure sightings</span><span id="weak">–</span>
+          <span>Building number</span><span id="seed">–</span>
+          <span>Fire spread</span><span id="fireMode">–</span>
+        </div>
+        <p style="margin:8px 0 0">A spot counts as searched only when a drone's camera has looked at it from within 3.5 m.
+          A person is confirmed when the AI sees them from two different drone positions with at least 92% confidence.</p>
+      </details>
     </aside>
 
     <div class="overlay" id="tutorial">
-      <div class="card">
-        <h3>Rescue Mission</h3>
-        <ol>
-          <li>A four-storey building is on fire, with people trapped inside. Two drones search it, one starting on the
-            first floor and one on the fourth, splitting the building between them.</li>
-          <li>They find their way by <b>sonar</b>. Each drone's camera view is shown, with the building plan on the right.</li>
-          <li>An <b>AI model</b> checks the drones' camera frames for people. Detections appear in the panel; click one to see the photo.</li>
-          <li>You have <b>20:00</b> (simulated). Search every reachable part of the building before the time runs out, or the building collapses.</li>
-          <li>Use <b>1× / 5× / 10×</b> to speed the mission up at any time.</li>
-        </ol>
-        <button class="primary" id="tutorialStart" disabled>Start mission</button>
-        <button id="tutorialClose">Look around first</button>
+      <div class="card" role="dialog" aria-labelledby="tutTitle">
+        <div>
+          <h3 id="tutTitle">Rescue Mission</h3>
+          <ol class="steps">
+            <li><span class="n">1</span><span>A four-storey building is <b>on fire</b> with people trapped inside.</span></li>
+            <li><span class="n">2</span><span><b>Two drones</b> search it on their own: one starts on the ground floor, one on the top floor.
+              You see each drone's camera and a map of the building.</span></li>
+            <li><span class="n">3</span><span>An <b>AI</b> checks the camera images for people. Everyone it finds appears on the left; click one to see the photo.</span></li>
+            <li><span class="n">4</span><span>Find <b>everyone</b> within <b>20 minutes</b> (simulated). Use <b>5×</b> or <b>10×</b> to speed things up.</span></li>
+          </ol>
+          <div class="buttons">
+            <button class="primary" id="tutorialStart" disabled>Loading the building…</button>
+          </div>
+        </div>
+        <div class="warn">
+          <video id="collapseVideo" src="rescue-media/collapse.mp4" poster="rescue-media/collapse-poster.jpg" autoplay muted loop playsinline preload="auto"
+                 aria-label="The building engulfed in fire and collapsing"></video>
+          <div class="caption">If time runs out, the building collapses.</div>
+          <div class="muted">The fire keeps spreading during the mission. At 20:00 it engulfs every floor and the building comes down, with anyone not found still inside.</div>
+        </div>
       </div>
     </div>
 
     <div class="overlay" id="result" hidden>
-      <div class="card">
+      <div class="card" role="dialog" aria-labelledby="resultTitle">
         <h3 id="resultTitle"></h3>
-        <p id="resultText" class="muted"></p>
-        <button class="primary" onclick="location.reload()">New mission</button>
-        <button onclick="document.getElementById('result').hidden = true">View the building</button>
+        <div class="people" id="resultPeople"></div>
+        <p id="resultText"></p>
+        <p id="resultNote" class="muted"></p>
+        <div class="buttons">
+          <button class="primary" onclick="location.reload()">New mission</button>
+          <button onclick="document.getElementById('result').hidden = true">View the building</button>
+        </div>
       </div>
     </div>
 
@@ -139,7 +218,12 @@
     const canvas = $('unity-canvas');
     const send = (method, arg) => window.sim && (arg === undefined ? sim.SendMessage('RescueControls', method) : sim.SendMessage('RescueControls', method, arg));
     const fmt = s => { s = Math.max(0, Math.ceil(s)); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
+    const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
     const r = { state: 'loading', ready: false, missionId: null, timer: null, ended: false, items: [] };
+    const PERSON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle class="p{c}" cx="12" cy="6.5" r="3.5"/><path class="p{c}" d="M5 21v-3.5a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5V21z"/></svg>';
+    const people = (found, total) => Array.from({ length: total }, (_, i) => PERSON.replaceAll('{c}', i < found ? ' found' : '')).join('');
+
+    function hint(text, kind) { $('hint').textContent = text; $('hint').className = kind || ''; }
 
     // ---------- speed (applies at any time, also before the start) ----------
     document.querySelectorAll('[data-speed]').forEach(b => b.onclick = () => {
@@ -148,54 +232,95 @@
       canvas.focus();
     });
 
-    // ---------- tutorial (shown on every page load) and start ----------
-    const start = () => { $('tutorial').hidden = true; send('StartMission'); $('startBtn').disabled = true; canvas.focus(); };
-    $('tutorialStart').onclick = start;
+    // ---------- tutorial (shown on every page load; ? reopens it) and start ----------
+    const closeTutorial = () => { $('tutorial').hidden = true; canvas.focus(); };
+    const start = () => { closeTutorial(); send('StartMission'); $('startBtn').disabled = true; };
+    $('tutorialStart').onclick = () => r.state === 'ready' ? start() : closeTutorial();
     $('startBtn').onclick = start;
-    $('tutorialClose').onclick = () => { $('tutorial').hidden = true; canvas.focus(); };
+    $('help').onclick = () => {
+      $('tutorialStart').textContent = r.state === 'ready' ? 'Start mission' : r.ready ? 'Back to the mission' : 'Loading the building…';
+      $('tutorial').hidden = false;
+      $('collapseVideo').play().catch(() => {});
+    };
+    $('tutorial').addEventListener('click', e => { if (e.target === $('tutorial') && r.state !== 'ready' && r.ready) closeTutorial(); });
+
+    // ---------- panel (can be hidden: it covers part of drone 1's camera) ----------
+    const showPanel = on => {
+      $('panel').hidden = !on; $('panelToggle').hidden = on;
+      document.querySelector('main').classList.toggle('with-panel', on);
+    };
+    $('panelHide').onclick = () => showPanel(false);
+    $('panelToggle').onclick = () => showPanel(true);
+
+    const DRONE = {
+      Idle: () => 'waiting to start', Searching: f => `searching floor ${f}`, ToStairs: () => 'heading to the stairs',
+      WaitingForStairs: () => 'waiting for the stairs', Climbing: () => 'taking the stairs', Holding: f => `looking around on floor ${f}`,
+      Done: () => 'looking for more to search',
+    };
 
     // ---------- mission state from Unity ----------
     window.addEventListener('rescue', ev => {
       const m = ev.detail;
       if (m.type !== 'rescue') return;
       if (!r.ready) {
-        r.ready = true; $('tutorialStart').disabled = false; $('startBtn').disabled = false; $('hint').textContent = 'Ready. Press Start mission.';
-        // rescue.html?fire=off : no fire spread this mission (the starting fires still burn), so a full search can finish.
-        if (new URLSearchParams(location.search).get('fire') === 'off') { send('SetFireSpread', 'off'); $('hint').textContent = 'Ready (fire spread off). Press Start mission.'; }
+        r.ready = true;
+        $('tutorialStart').disabled = false; $('tutorialStart').textContent = 'Start mission'; $('startBtn').disabled = false;
+        const q = new URLSearchParams(location.search);
+        // rescue.html?seed=N : a fixed building (layout, furniture, people, fires) for repeatable missions.
+        if (/^\d+$/.test(q.get('seed') || '')) send('SetSeed', q.get('seed'));
+        // rescue.html?fire=off : no fire spread this mission (the starting fires still burn). A demo mode, shown on the page.
+        if (q.get('fire') === 'off') send('SetFireSpread', 'off');
       }
       r.state = m.state;
+      const total = m.people_total, found = m.state === 'ready' ? 0 : m.people_found;
+      if (m.state === 'ready') hint(`Ready. ${total} people are trapped inside${m.fire_spread ? '' : ' (fire spread is OFF for this mission)'}. Press Start mission.`);
       $('timer').textContent = fmt(m.remaining_s);
       $('timer').className = m.remaining_s <= 0 ? 'out' : m.remaining_s < 120 ? 'low' : '';
       const b = $('stateBadge');
-      b.textContent = m.collapsing ? 'collapsing' : m.state;
-      b.className = 'badge ' + (m.state === 'successful' ? 'ok' : m.state === 'failed' ? 'bad' : m.state === 'running' ? 'run' : '');
-      if (m.state !== 'ready') $('startBtn').disabled = true;
-      $('cov').textContent = `${(m.coverage * 100).toFixed(1)}%`;
+      b.textContent = m.collapsing ? 'Collapsing' : { ready: 'Ready', running: 'Searching', successful: 'Successful', failed: 'Failed' }[m.state] || m.state;
+      b.className = 'pill ' + (m.state === 'successful' ? 'ok' : m.state === 'failed' ? 'bad' : m.state === 'running' ? 'run' : '');
+      if (m.state !== 'ready') { $('startBtn').disabled = true; $('startBtn').hidden = true; }
+      $('found').textContent = `${found} of ${total}`;
+      const icons = people(found, total);
+      if ($('peopleIcons').innerHTML !== icons) $('peopleIcons').innerHTML = icons;
+      $('effSpeed').textContent = m.state === 'running' && m.effective_speed < m.speed - 0.25 ? `running at ${m.effective_speed.toFixed(1)}× (AI keeping up)` : '';
+      $('cov').textContent = `${(m.coverage * 100).toFixed(0)}%`;
       $('covBar').style.width = `${m.coverage * 100}%`;
+      $('fire').textContent = `${(m.fire_share * 100).toFixed(0)}%`;
+      $('fireBar').style.width = `${m.fire_share * 100}%`;
       $('unseen').textContent = m.unseen;
       $('closed').textContent = m.closed_off;
       $('cutoff').textContent = m.search_complete || m.state !== 'running' ? m.cut_off_by_fire : '–';
-      m.drones.forEach(d => { const el = $('d' + d.id); if (el) el.textContent = `floor ${d.floor} · ${d.status.replace(/([A-Z])/g, ' $1').trim().toLowerCase()}`; });
-      $('fire').textContent = `${(m.fire_share * 100).toFixed(0)}%`;
-      $('fireBar').style.width = `${m.fire_share * 100}%`;
+      $('seed').textContent = m.seed;
+      $('fireMode').textContent = m.fire_spread ? 'on' : 'OFF (demo mode)';
+      m.drones.forEach(d => {
+        const el = $('d' + d.id);
+        if (el) el.textContent = m.state === 'running' ? (DRONE[d.status] || (() => d.status))(d.floor)
+          : m.state === 'ready' ? 'waiting to start' : 'stopped';
+      });
       if (m.mission_id && m.mission_id !== r.missionId) { r.missionId = m.mission_id; pollAI(); r.timer = setInterval(pollAI, 1500); }
+      const sj = JSON.stringify(m.sightings);
+      if (sj !== r.sightingsJson) { r.sightingsJson = sj; r.items = m.sightings; renderDets(); }
       if (m.state === 'running') {
-        $('hint').textContent = m.search_complete && (m.unseen > 0 || m.cut_off_by_fire > 0)
-          ? `The drones searched everything they could reach, but ${m.unseen + m.cut_off_by_fire} spots were not searched (${m.cut_off_by_fire} cut off by fire). The search is not complete.`
-          : 'Searching. The drones split the building and search it by sonar; the AI checks their camera frames for people.';
         if (m.error) $('hint').innerHTML = `<span class="err">${m.error}</span>`;
+        else hint(`Searching: ${found} of ${total} people found so far.`
+          + (m.pass > 1 ? ' The drones are going back over places they could not see well, and keep searching until time runs out.' : ' The drones are splitting the building between them.')
+          + (m.fire_spread ? '' : ' Fire spread is off for this mission.'));
       }
       if ((m.state === 'successful' || m.state === 'failed') && !r.ended) {
         r.ended = true;
-        const ok = m.state === 'successful';
+        const ok = m.state === 'successful', used = m.mission_s - m.remaining_s, missing = total - found;
         $('result').className = 'overlay ' + (ok ? 'ok' : 'bad');
         $('resultTitle').textContent = ok ? 'MISSION SUCCESSFUL' : 'MISSION FAILED';
-        const used = m.mission_s - m.remaining_s;
+        $('resultPeople').innerHTML = people(found, total);
         $('resultText').textContent = ok
-          ? `Every reachable part of the building was searched in ${fmt(used)} (${m.closed_off} closed-off spots could not be reached).`
-          : `Time ran out with ${(m.coverage * 100).toFixed(1)}% of the building searched: ${m.unseen} spots left and ${m.cut_off_by_fire} cut off by fire. The building is collapsing.`;
+          ? `All ${total} trapped people were found in ${fmt(used)}.`
+          : `Time ran out. ${found} of ${total} people were found; ${plural(missing, 'person was', 'people were')} still inside when the building collapsed.`;
+        $('resultNote').textContent = (m.false_confirmed ? `${plural(m.false_confirmed, 'confirmed sighting was a false alarm', 'confirmed sightings were false alarms')} (no person there). ` : '')
+          + `The drones searched ${(m.coverage * 100).toFixed(0)}% of the building.`;
         $('result').hidden = false;
-        $('hint').textContent = ok ? 'Mission successful.' : 'Mission failed: the search was not completed in time.';
+        hint(ok ? 'Mission successful: everyone was found.' : `Mission failed: ${plural(missing, 'person was', 'people were')} not found.`, ok ? 'ok' : 'bad');
+        renderDets();
         setTimeout(pollAI, 500);
       }
     });
@@ -204,77 +329,77 @@
     async function checkVision() {
       try {
         const h = await (await fetch('api/rescue/vision')).json();
-        $('aiBadge').className = 'badge ' + (h.ok ? 'ok' : 'bad');
+        $('aiBadge').className = 'pill ' + (h.ok ? 'ok' : 'bad');
         $('aiBadge').textContent = h.ok ? 'ready' : 'offline';
-        $('aiStatus').textContent = h.ok ? 'Person model ready. Frames are checked once the mission starts.'
-          : 'Person model server not reachable: the mission runs, but frames are not analyzed (see DEMO.md).';
+        $('aiStatus').textContent = h.ok ? 'Nobody yet. The AI starts checking camera images when the mission starts.'
+          : 'The AI model is not running, so camera images are not checked. Start it with ./run_rescue.sh (see RESCUE.md).';
       } catch (e) {
-        $('aiBadge').className = 'badge bad'; $('aiBadge').textContent = 'offline';
-        $('aiStatus').textContent = 'No server API here: start the site with python3 scan_server.py.';
+        $('aiBadge').className = 'pill bad'; $('aiBadge').textContent = 'offline';
+        $('aiStatus').textContent = 'The AI server is not running here. Start the site with ./run_rescue.sh (see RESCUE.md).';
       }
     }
     checkVision();
 
+    // Frame counts from the server; the sightings (grouping, confirmation) come from the simulation's state events,
+    // so the panel, the people count and the mission result always agree.
     async function pollAI() {
       if (!r.missionId) return;
       let d;
       try { d = await (await fetch(`api/rescue/${r.missionId}/detections`)).json(); } catch (e) { return; }
       if (d.error) return;
-      const c = d.inference;
-      r.byId = Object.fromEntries(d.detections.map(x => [x.detection_id, x]));
-      // Confirmed: the same spot detected in frames from at least two different drone positions (a one-frame hit is
-      // often a shadow or furniture). Unconfirmed sightings are counted, not listed.
-      // Only detections of plausible person size (0.25-2.2 m, from the box and the distance) count.
-      const positions = g => new Set(g.detection_ids.filter(i => (r.byId[i].world_position || {}).plausible)
-        .map(i => { const p = r.byId[i].camera_position; return p ? p.map(v => Math.round(v * 2)).join(',') : i; })).size;
-      const all = d.sightings.filter(g => g.detection_ids.length && g.world_position);
-      // Confirmed: >= 2 drone positions and confidence >= 0.9 (in test missions real people scored 0.94-0.98 except one
-      // at 0.82, while mistaken doorways, stairs and furniture scored 0.60-0.88).
-      const confirmed = all.filter(g => positions(g) >= 2 && g.best_confidence >= 0.9);
-      // Unconfirmed: one drone position only, but a strong, person-sized detection. Shown dimmed, never as confirmed.
-      const strong = all.filter(g => !confirmed.includes(g) && positions(g) >= 1 && g.best_confidence >= 0.8);
-      confirmed.forEach(g => g.confirmed = true);
-      r.items = confirmed.concat(strong);
-      const unconfirmed = all.length - confirmed.length;
-      $('aiStatus').innerHTML = `Analyzed ${c.analyzed} frame${c.analyzed === 1 ? '' : 's'}`
-        + (c.failed ? ` · <span class="err">${c.failed} failed</span>` : '')
-        + ` · <b>${confirmed.length} ${confirmed.length === 1 ? 'person' : 'people'} confirmed</b>`
-        + (strong.length ? ` · ${strong.length} unconfirmed (one view)` : '')
-        + (unconfirmed - strong.length > 0 ? ` · <span class="muted">${unconfirmed - strong.length} weak sighting${unconfirmed - strong.length === 1 ? '' : 's'} ignored</span>` : '');
-      $('aiBadge').className = 'badge ' + (c.failed ? 'bad' : confirmed.length ? 'ok' : 'run');
-      $('aiBadge').textContent = c.failed ? 'errors' : confirmed.length ? 'found' : 'searching';
+      r.counts = d.inference;
+      renderDets();
+      if (r.ended && !r.counts.queued && !r.counts.running) clearInterval(r.timer);
+    }
+
+    function renderDets() {
+      const c = r.counts, items = r.items || [];
+      const confirmed = items.filter(g => g.confirmed), strong = items.filter(g => !g.confirmed && g.best >= 0.8);
+      r.shown = confirmed.concat(strong);
+      $('weak').textContent = items.length - confirmed.length;
+      if (c) {
+        $('frames').textContent = c.analyzed + (c.failed ? ` (${c.failed} failed)` : '');
+        $('aiBadge').className = 'pill ' + (c.failed ? 'bad' : confirmed.length ? 'ok' : 'run');
+        $('aiBadge').textContent = c.failed ? 'errors' : confirmed.length ? `${confirmed.length} found` : 'looking';
+        $('aiStatus').textContent = r.shown.length ? '' : `Nobody yet (${plural(c.analyzed, 'image', 'images')} checked).`;
+      }
       $('dets').innerHTML = '';
-      r.items.forEach((g, k) => {
-        const x = r.byId[g.best_detection_id], b = x.bbox, w = x.world_position || {};
-        const el = document.createElement('div');
-        el.className = 'det' + (g.confirmed ? '' : ' weak');
-        el.innerHTML = `<div class="thumb"><img src="api/rescue/${r.missionId}/image/${x.image_id}" alt="">
+      r.shown.forEach((g, k) => {
+        const b = g.bbox, el = document.createElement('div');
+        g.name = g.confirmed ? `Person ${k + 1}` : 'Possible person';
+        const tag = g.true_person === false ? '<span class="tag bad">false alarm</span>'
+          : g.confirmed ? '<span class="tag ok">✓ confirmed</span>' : r.ended ? '<span class="tag">not confirmed</span>' : '<span class="tag">checking…</span>';
+        el.className = 'det';
+        el.title = 'Click to see the photo';
+        el.innerHTML = `<div class="thumb"><img src="api/rescue/${r.missionId}/image/${g.image_id}" alt="">
             <i style="left:${b.x * 100}%;top:${b.y * 100}%;width:${b.w * 100}%;height:${b.h * 100}%"></i></div>
-          <div><b>${k + 1}. person</b> · ${(g.best_confidence * 100).toFixed(0)}%${g.confirmed ? '' : ' <span class="tag">unconfirmed</span>'}<br>drone ${x.drone_id} · ${w.available ? `floor ${w.floor}` : `drone on floor ${x.floor}`}<br>
-          <span class="muted">${w.available ? `x ${w.x.toFixed(1)}, z ${w.z.toFixed(1)} m (estimated)` : 'locating…'}</span></div>`;
+          <div><b>${g.name}</b> ${tag}<br>Floor ${g.floor} · ${(g.best * 100).toFixed(0)}% sure<br>
+          <span class="muted">${g.confirmed ? `seen from ${g.views} positions` : r.ended ? 'seen from only one spot' : 'needs a second look from another spot'}</span></div>`;
         el.onclick = () => openViewer(k);
         $('dets').appendChild(el);
       });
-      if (r.ended && !c.queued && !c.running) clearInterval(r.timer);
     }
 
     function openViewer(k) {
-      const g = r.items[k], x = r.byId[g.best_detection_id], b = x.bbox, w = x.world_position || {};
-      $('vPhoto').innerHTML = `<img src="api/rescue/${r.missionId}/image/${x.image_id}" alt="Drone camera frame">
+      const g = r.shown[k], b = g.bbox;
+      $('vPhoto').innerHTML = `<img src="api/rescue/${r.missionId}/image/${g.image_id}" alt="Drone camera photo">
         <i style="left:${b.x * 100}%;top:${b.y * 100}%;width:${b.w * 100}%;height:${b.h * 100}%"></i>`;
-      $('vInfo').innerHTML = `<h3 style="margin:0 0 8px">${k + 1}. Person${g.confirmed ? '' : ' <span class="tag">unconfirmed</span>'}</h3>
-        <b>${(g.best_confidence * 100).toFixed(0)}%</b> model confidence · ${g.confirmed ? `confirmed from ${g.photos_detected} frames at different drone positions` : 'seen from one drone position only (not confirmed)'}<br>
-        Estimated size ${w.size_m ? `${w.size_m[0].toFixed(1)} × ${w.size_m[1].toFixed(1)} m` : '–'}<br><br>
-        <b>Location</b> ${w.available ? `(estimated)<br>floor ${w.floor} · x ${w.x.toFixed(2)}, y ${w.y.toFixed(2)}, z ${w.z.toFixed(2)} m<br>
-        <span class="muted">A ray from the drone camera through the box center, ${w.distance_m.toFixed(1)} m to the first surface (${w.ray_hit}).</span>`
-          : `<br><span class="muted">Not available: ${w.reason || 'not located yet'}.</span>`}<br><br>
-        <span class="muted">Drone ${x.drone_id} on floor ${x.floor}, frame #${x.sequence_number}.</span>`;
+      $('vInfo').innerHTML = `<h3 style="margin:0 0 8px">${g.name} ${g.confirmed ? '<span class="tag ok">✓ confirmed</span>' : '<span class="tag">not confirmed yet</span>'}</h3>
+        The AI is <b>${(g.best * 100).toFixed(0)}% sure</b> this is a person. It was seen in ${plural(g.frames, 'photo', 'photos')} from
+        ${plural(g.views, 'drone position', 'different drone positions')}.
+        ${g.confirmed ? '' : '<br><span class="muted">To be confirmed it needs to be seen from a second position with at least 92% confidence.</span>'}<br><br>
+        <b>Where</b><br>Floor ${g.floor}, at x ${g.x.toFixed(1)}, z ${g.z.toFixed(1)} m (estimated)<br>
+        <span class="muted">Estimated from the drone camera's position and direction; the best photo was taken ${g.distance_m.toFixed(1)} m away by drone ${g.drone}.</span>`;
       $('viewer').hidden = false;
     }
     const closeViewer = () => { $('viewer').hidden = true; canvas.focus(); };
     $('viewerClose').onclick = closeViewer;
     $('viewer').addEventListener('click', e => { if (e.target === $('viewer')) closeViewer(); });
-    window.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('viewer').hidden) closeViewer(); });
+    window.addEventListener('keydown', e => {
+      if (e.key !== 'Escape') return;
+      if (!$('viewer').hidden) closeViewer();
+      else if (!$('tutorial').hidden && r.ready && r.state !== 'ready') closeTutorial();
+    });
 
     createUnityInstance(canvas, {
       dataUrl: 'rescue-sim/Build/rescue-sim.data',
@@ -282,7 +407,7 @@
       codeUrl: 'rescue-sim/Build/rescue-sim.wasm',
       companyName: 'AeroNav', productName: 'Rescue Mission', productVersion: '1.0',
       matchWebGLToCanvasSize: true,
-    }, p => $('pct').textContent = Math.round(p * 100) + '%')
+    }, p => { $('pct').textContent = Math.round(p * 100) + '%'; $('loadBar').style.width = p * 100 + '%'; })
       .then(instance => { window.sim = instance; $('load').classList.add('done'); })
       .catch(e => $('load').textContent = 'Could not start the simulation: ' + e);
   </script>

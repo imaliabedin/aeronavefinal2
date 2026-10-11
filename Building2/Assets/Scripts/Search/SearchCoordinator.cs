@@ -293,6 +293,23 @@ public class SearchCoordinator : MonoBehaviour
     /// Stops the search where it is (the Rescue Mission's terminal states).
     public void Halt() => Running = false;
 
+    /// Rescue Mission second pass: the drones search again (spots still unseen get another try from new positions).
+    public void Resume()
+    {
+        Complete = false;
+        Running = true;
+        foreach (var d in drones) { d.ForgetVisited(); d.Begin(); }
+    }
+
+    /// Rescue Mission: one drone that ran out of work starts again (the search keeps running for the others).
+    public void Restart(SearchDrone d)
+    {
+        Complete = false;
+        Running = true;
+        d.ForgetVisited();
+        d.Begin();
+    }
+
     public void Begin()
     {
         Running = true;
@@ -372,11 +389,17 @@ public class SearchCoordinator : MonoBehaviour
         return best;
     }
 
+    [Tooltip("A floor is worth a trip by the stairs only with at least this many spots left (Rescue Mission camera search: " +
+             "a few scattered spots the camera can't see are not worth minutes of travel).")]
+    public int minFloorWork = 1;
+
     bool HasWork(int f, int owner)
     {
+        var d = drones.Find(o => o.id == owner);
+        int need = d != null && f == d.Floor ? 1 : minFloorWork, n = 0;
         for (int x = 0; x < Grid.nx; x++)
             for (int z = 0; z < Grid.nz; z++)
-                if (Grid.state[f, x, z] == SearchGrid.Spot.Unseen && Grid.owner[f, x, z] == owner) return true;
+                if (Grid.state[f, x, z] == SearchGrid.Spot.Unseen && Grid.owner[f, x, z] == owner && (d == null || !d.Visited(f, x, z)) && ++n >= need) return true;
         return false;
     }
 
