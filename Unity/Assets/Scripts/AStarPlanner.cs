@@ -1,25 +1,25 @@
-using System.Collections.Generic;
-using UnityEngine;
+using System.Collections.Generic; // gives you algorithms and data structures like List,Dictionary and Hashset.
+using UnityEngine; // imports unity data types.
 
 /// 6-connected grid A* over the cell map. In Full-Knowledge mode the drone knows the whole world:
 /// walls and placed props are obstacles, and the target is the nearest win cube. In Sonar mode
 /// (an isBlocked callback is given) it knows only the goal and the outer bounds.
 public static class AStarPlanner
 {
-    const float DroneClearance = 0.3f;
+    const float DroneClearance = 0.3f; // sets margin around prop obstacles so drone does not pass though them.
 
     // Neighbour order: +X, -X, +Y, -Y, +Z, -Z
     public static readonly Vector3Int[] Dirs =
     {
-        Vector3Int.right, Vector3Int.left, Vector3Int.up, Vector3Int.down,
+        Vector3Int.right, Vector3Int.left, Vector3Int.up, Vector3Int.down, // defines movement directions all are available except forward and backward (0,0,1) "forward" and (0,0,-1) "backward"
         new Vector3Int(0, 0, 1), new Vector3Int(0, 0, -1)
     };
 
     public class Result
     {
-        public bool found;
-        public string failReason;
-        public List<Vector3Int> path = new List<Vector3Int>();   // start..goal inclusive
+        public bool found; // whether valid route was found
+        public string failReason; //why the search failed if it did stored.
+        public List<Vector3Int> path = new List<Vector3Int>();   // final route from start to goal
         public HashSet<Vector3Int> closed = new HashSet<Vector3Int>();
         public Vector3Int goal;
         public int expanded;
