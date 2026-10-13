@@ -1,5 +1,5 @@
-using System.Collections.Generic;
-using UnityEngine;
+using System.Collections.Generic; // import needed datatypes 
+using UnityEngine; // import unity data types.
 
 /// Pure geometry for the area scan (no scene access, so the editor tests can check it directly).
 /// Coordinates are world meters on the ground plane: Vector2(x, z). Grid cells are 1 m, centered on integers.
@@ -19,7 +19,7 @@ public static class ScanPlanner
         public float altitude = 2.5f;         // camera height above the ground (m); the AI model was trained on 2.3-5 m views
         public float overlap = 0.15f;         // fraction of the footprint shared by neighbouring images / lanes
         public float verticalFovDeg = 60f;    // camera vertical field of view
-        public float aspect = 1f;             // image width / height
+        public float aspect = 1f;             // image width / height this means hieght/width = 1, meaning a square image 
         public float edgeMargin = 0.25f;      // planning treats each image as this much smaller on every side (position error)
         public float minEdge = 3f;            // shortest allowed region edge (m)
         public float minArea = 25f;           // m²
@@ -28,30 +28,41 @@ public static class ScanPlanner
 
     public class Lane
     {
-        public Vector2 a, b;                  // fly from a to b
+        public Vector2 a, b;                  // fly from a to b , a is start position of lane and b is end position of lane.
         public List<Vector2> captures = new List<Vector2>();   // planned capture positions, a → b
-        public Vector2 Dir => (b - a).sqrMagnitude > 1e-8f ? (b - a).normalized : Vector2.right;
-        public float Length => Vector2.Distance(a, b);
+        public Vector2 Dir => (b - a).sqrMagnitude > 1e-8f ? (b - a).normalized : Vector2.right; // (b - a).normalized  checks if lane has meaningful length if not it returns a vector of length one.
+        public float Length => Vector2.Distance(a, b); //calculates distance between points. Remember this in in xy-plane for now no z yet because this is just planned movement.
     }
 
     public class Plan
     {
-        public Vector2[] corners;             // ordered
-        public Vector2 footprint;             // ground size of one image: x = world X extent, y = world Z extent
-        public float laneSpacing, captureSpacing;
-        public bool lanesAlongX;
-        public List<Lane> lanes = new List<Lane>();
+        public Vector2[] corners;             // four corners of selcted region each point has (x,y)
+        public Vector2 footprint;             // ground size of one image: x = world X extent, y = world Z extent. Size of camera usable ground before subtracting object margins.
+        public float laneSpacing, captureSpacing; //laneSpacing is distance between adj. lanes and captureSpacing is maximum distance between captures on the same lane.
+        public bool lanesAlongX; // whether or not the lane travels mainly across x-axis and no y -axis.
+        public List<Lane> lanes = new List<Lane>(); // list of all planned flight lanes.
         public int CaptureCount { get { int n = 0; foreach (var l in lanes) n += l.captures.Count; return n; } }
+        //gets number of captures across lanes by adding up number of captures on each lane. value is returned.
     }
 
     /// Ground footprint of a straight-down camera at height h: (world X extent, world Z extent).
     /// The image's top is the drone's +Z (see DroneCamera), so the vertical FOV spans world Z.
-    public static Vector2 Footprint(float altitude, float verticalFovDeg, float aspect)
+    public static Vector2 Footprint(float altitude, float verticalFovDeg, float aspect) 
     {
+        // altitude is the distance between the drone and the ground.
+        //vertical view of field in degrees .
+        //aspect is image width divided by image height.
+        
         float tv = Mathf.Tan(verticalFovDeg * 0.5f * Mathf.Deg2Rad);
+        //divide the degrees field view by 2 to get the angle of a right triangle and convert that into radians.
+        //calculate tangent of that angle which is basically calculating the slope.
         float zExtent = 2f * altitude * tv;
+        // z extent is calculated by doing tan = opp/adj, so opp is hald of z-extent  and divide that by height rearrange formula to get 
+        //z-extent by itself z_extent = 2 * h * tan(theta)
         float xExtent = 2f * altitude * tv * aspect;   // tan(hfov/2) = aspect * tan(vfov/2)
+        // calculates x_extent = 2 * z_extent 
         return new Vector2(xExtent, zExtent);
+        //returns values of x_extent and z_extent.
     }
 
     /// Orders four corners by the rule above and checks them. Returns null (and a reason) if the region is invalid.
